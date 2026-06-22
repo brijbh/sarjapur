@@ -100,3 +100,23 @@ Strategy A — programmatic import. `detectSystem()` is synchronous; wrapped in 
 - `checkLMStudio()` is exported independently so Section 7 (setup workflow) can re-scan LM Studio after user installs a model, without re-running the full scan.
 
 ---
+
+## Section 4 — Core Modules
+**Completed:** 2026-06-22T13:22:00Z
+**Commit:** `feat: implement advisor, state, permissions, and utility modules`
+
+### What was done
+- `src/core/advisor.ts` — `Advice` interface + `buildAdvice(scan)`: derives `missingTools` from scan statuses, `compatibleModels`/`preferredModel` from models check, `hardwareSummary` in plain English, ordered `recommendations` (most blocking first), and `isSetupComplete` flag (true only if state + opencode config + LM Studio + models are all `ok`).
+- `src/core/state.ts` — `StateSchema` (Zod), `State` type. `readState()` returns `null` if missing/invalid. `writeState()` is atomic (writes to `.tmp` then renames). `clearState()` deletes state file only, ignores ENOENT.
+- `src/core/permissions.ts` — `ask()` (Yes/No via `@inquirer/prompts confirm`), `strongConfirm()` (user must type exact word), `choose<T>()` (select list). All handle Ctrl+C: exit 0, print `Cancelled.`
+- `src/utils/format.ts` — `printHeader`, `printCheckResult` (✓/⚠/✗ with chalk colours), `printSuccess`, `printWarn`, `printError`, `printInfo`, `printSection`, `printHardwareSummary`, `printVSCodeCard` (exact next-steps card text from the prompt).
+- `src/utils/files.ts` — `fileExists`, `readJsonFile<T>`, `writeJsonFile` (mkdir recursive), `backupFile` (timestamped `YYYYMMDD-HHMM` in local time, throws if source missing), `getFolderSize` (recursive bytes, skips unreadable).
+- `src/utils/json.ts` — `safeParseJson<T>(schema, raw)` — JSON.parse + Zod safeParse, returns null on any failure.
+- `src/core/workflow.ts` — stub: exports `WorkflowTarget` type and `runSetupWorkflow()` signature. Logs `[not yet implemented]`. Full implementation in Section 7.
+- `npm run typecheck` — passes with zero errors.
+
+### Known gaps or deferred items
+- `workflow.ts` is a stub — Section 7 implements terminal, VS Code, and both flows.
+- `advisor.ts` sets `preferredWorkflow: null` — this is populated after the user chooses a workflow in the setup command (Section 7).
+
+---
