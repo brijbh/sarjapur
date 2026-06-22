@@ -1,0 +1,44 @@
+{
+  "name": "local-ai",
+  "version": "0.1.0",
+  "description": "Set up local AI coding and chat tools without provider API keys.",
+  "author": "Brijesh B",
+  "type": "module",
+  "bin": {
+    "local-ai": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/cli.ts",
+    "start": "node dist/cli.js",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint ."
+  },
+  "keywords": [
+    "local-ai",
+    "opencode",
+    "lmstudio",
+    "llm-env-check",
+    "cli",
+    "no-api-key"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
+  "dependencies": {
+    "commander": "^12.0.0",
+    "@inquirer/prompts": "^5.0.0",
+    "chalk": "^5.0.0",
+    "execa": "^9.0.0",
+    "zod": "^3.22.0",
+    "llm-env-check": "latest"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "tsx": "^4.0.0",
+    "@types/node": "^20.0.0",
+    "eslint": "^9.0.0"
+  }
+}
