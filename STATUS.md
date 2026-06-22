@@ -312,3 +312,39 @@ Every document ends with `*Developed by Brijesh B*` per spec.
 - None. Documentation is complete to v0.1 scope. The README does not include a license badge or installation-from-npm instructions because v0.1 is not yet published to npm — those land with the v0.1 release commit.
 
 ---
+
+## Section 12 — Final Verification
+**Completed:** 2026-06-22T18:40:00Z
+**Commit:** `chore: final typecheck, build verification, and STATUS.md completion`
+
+### What was done
+- `npm run typecheck` — zero errors.
+- `npm run build` — zero errors.
+- Binary verified on the dev machine (Windows 11, Node 24.13.0, npm 11.16.0):
+  - `node dist/cli.js --help` — lists all 6 commands (`doctor`, `setup`, `status`, `repair`, `reset`, `cleanup`) with correct descriptions.
+  - `node dist/cli.js doctor` — scans real hardware (RTX 5060 Laptop GPU, 31.3 GB RAM, RAM tier max 13B, CUDA acceleration, LM Studio reachable with 2 models / 1 compatible, opencode 1.14.41, VS Code 1.122.1), exits 1 because no saved state — matches spec.
+  - `node dist/cli.js status` — prints `No setup found.` + `Run: local-ai setup`, exits 1 — matches spec.
+- STATUS.md confirmed to contain entries for Sections 1–11 (in addition to this one).
+
+### v0.1 deferred items (consolidated)
+
+These were noted in prior section entries and are not blocking the v0.1 build. Listed here as the v0.2 work-in queue.
+
+**Functional**
+- LM Studio winget package ID is a 3-candidate try-list (`ElementLabs.LMStudio`, `LMStudio.LMStudio`, `lmstudio`). Per Appendix C of the build prompt, needs verification via `winget search lmstudio` on a real machine and a single canonical ID.
+- `local-ai setup` not exercised end-to-end (would prompt for `winget` and `npm` installs and write `%USERPROFILE%` paths gated by user consent). All sub-functions (scanner, advisor, opencode integration, workflow orchestrator) are exercised individually or in dry runs.
+- `local-ai repair` does not re-install missing base tools — `setup` is the documented path for that case.
+- `cleanup --delete` is a stub per spec; deletion lands in v0.2.
+- `cleanup` lists top-level subdirectories of LM Studio model dirs (e.g. `lmstudio-community`) rather than individual GGUF folders inside. Deeper drill-down deferred to v0.2 when deletion needs per-model granularity.
+- `Profile` is hardcoded to `'coding'` for v0.1.
+
+**Cosmetic (in code committed before this section)**
+- Banner doubles the author tagline in `doctor` / `status` output: `printHeader('Developed by Brijesh B')` then `printHeader`'s own `Developed by Brijesh B` line. Trivial fix when convenient. (`setup` / `repair` / `reset` / `cleanup` already avoid this by passing a meaningful title like `Setup`, `Repair`, etc.)
+- LM Studio scanner check labels as `LM Studio` rather than the prompt's example `LM Studio server reachable`. Functionally identical.
+
+**Project hygiene**
+- `npm audit` flagged 4 vulnerabilities (3 low, 1 high) at Section 1; not addressed in scaffold — revisit before publishing to npm.
+- `SARJAPUR_AGENT_PROMPT.md` lives at `C:\Users\Brijesh\Downloads\` and is not part of the repo. The repo's spec lives in the section-by-section STATUS.md entries.
+- README does not yet include a license badge or `npm install` instructions — these land with the v0.1 release commit when published.
+
+---
