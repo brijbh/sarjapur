@@ -269,3 +269,28 @@ Most of Section 8's surface was pulled forward into Section 7 (because the workf
 - `reset` is a single-tier confirmation (Yes/No). The prompt's permission model reserves `strongConfirm` for "Overwriting an existing config file / Deleting any file / Modifying anything outside the state/config paths". The state file is **inside** the state path so single-tier `ask()` is correct per the safety policy.
 
 ---
+
+## Section 10 — Cleanup Command
+**Completed:** 2026-06-22T16:15:00Z
+**Commit:** `feat: implement cleanup command in list-only mode`
+
+### What was done
+- `src/commands/cleanup.ts` — full `runCleanup(opts)`:
+  - **Task 10.2** — `--delete` early exit prints `Model deletion is not available in v0.1. / To remove models: use LM Studio → My Models → Delete.` → exits 0.
+  - **Task 10.1** — list mode:
+    - Iterates both `LMSTUDIO_MODEL_DIRS` from [paths.ts](src/core/paths.ts): `%USERPROFILE%\.lmstudio\models` and `%USERPROFILE%\.lmstudio\hub\models`.
+    - Skips directories that don't exist; tracks whether *any* directory was found.
+    - For each existing directory: lists immediate subdirectories and computes recursive size via `getFolderSize()`.
+    - Sorts entries descending by size. Renders an aligned 3-column table: index + name + human-readable size + full path (`B` / `KB` / `MB` / `GB` formatter inline).
+    - If no model directories exist at all: prints both candidate paths + a hint to check `Settings → Model Directory` in LM Studio.
+    - If directories exist but contain nothing: prints `No model files found in LM Studio directories.`
+- `npm run typecheck` — zero errors.
+- `npm run build` — zero errors.
+- `node dist/cli.js cleanup` verified on dev machine: found `lmstudio-community` (17.4 GB) at `C:\Users\Brijesh\.lmstudio\models\lmstudio-community`, exits 0.
+- `node dist/cli.js cleanup --delete` verified: prints stub message, exits 0.
+
+### Known gaps or deferred items
+- Listing groups by *top-level* subdirectory of each model dir (e.g. `lmstudio-community` rather than the individual GGUF folders inside it). Deeper drill-down is deferred to v0.2 when deletion lands and per-model granularity matters.
+- v0.1 does not implement deletion. Stubbed per spec.
+
+---
