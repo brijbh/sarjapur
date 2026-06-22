@@ -6,6 +6,7 @@ import {
   printSection,
   printCheckResult,
   printHardwareSummary,
+  printCatalogRecommendations,
   printInfo,
   printSuccess,
 } from '../utils/format.js';
@@ -66,6 +67,12 @@ export async function runDoctor(): Promise<void> {
   printSection('Coding Tools');
   printCheckResult(scan.opencode);
   printCheckResult(scan.vscode);
+
+  // llm-env-check catalog recommendations (what the user could install)
+  printCatalogRecommendations(
+    scan.hardware.catalogRecommendations,
+    scan.hardware.catalogProfile,
+  );
 
   // Saved setup
   printSection('Saved Setup');

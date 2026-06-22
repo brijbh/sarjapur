@@ -22,6 +22,7 @@ import { launchVSCode } from '../integrations/vscode.js';
 import { checkLMStudio } from '../providers/lmstudio.js';
 import { commandExists } from '../utils/command.js';
 import { LMSTUDIO_BASE_URL, OPENCODE_CONFIG_FILE } from './paths.js';
+import { pickBestCatalogModel } from './envcheck.js';
 
 // ---------------------------------------------------------------------------
 // WorkflowTarget — Task 4.8
@@ -139,17 +140,35 @@ async function installLMStudioIfMissing(scan: ScanResult, advice: Advice): Promi
   printSuccess('LM Studio installed.');
   console.log('');
   console.log('Next: download a model inside LM Studio.');
+
+  // Prefer an already-loaded LM Studio model if compatible; otherwise use the
+  // top GOOD coding-profile entry from llm-env-check's catalog. This was the
+  // gap before: we used to hardcode Qwen3-Coder-30B which is too big for most
+  // machines. Catalog data is hardware-aware.
+  const catalogPick = pickBestCatalogModel(
+    scan.hardware.catalogRecommendations,
+    scan.hardware.catalogProfile,
+  );
+  const recommendedSearch =
+    advice.preferredModel ?? catalogPick?.name ?? 'Qwen2.5-Coder 7B';
+  const recommendedQuant = catalogPick?.quantization ?? 'Q4_K_M';
+
   if (advice.preferredModel) {
-    console.log(`Recommended for your hardware: ${advice.preferredModel}`);
+    console.log(`Recommended (already in LM Studio): ${advice.preferredModel}`);
+  } else if (catalogPick) {
+    console.log(
+      `Recommended for your hardware (from llm-env-check): ${catalogPick.name} — ${catalogPick.useCase}`,
+    );
+    console.log(
+      `  Est. ${catalogPick.estimatedMemoryGb} GB ${catalogPick.quantization}  |  Rating: ${catalogPick.rating}`,
+    );
   }
   console.log('');
   console.log('Steps:');
   console.log('  1. Open LM Studio');
   console.log('  2. Go to the Search tab');
-  console.log(
-    `  3. Search: ${advice.preferredModel ?? 'Qwen3-Coder-30B-A3B-Instruct-GGUF'}`,
-  );
-  console.log('  4. Download the Q4_K_M variant');
+  console.log(`  3. Search: ${recommendedSearch}`);
+  console.log(`  4. Download the ${recommendedQuant} variant (or closest available)`);
   console.log('  5. Go to Local Server → Load model → Start server');
   console.log('');
 

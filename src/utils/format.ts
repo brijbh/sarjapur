@@ -1,6 +1,9 @@
 import chalk from 'chalk';
 import type { CheckResult } from '../core/scanner.js';
-import type { HardwareCapabilities } from '../core/envcheck.js';
+import type {
+  HardwareCapabilities,
+  ModelRecommendation,
+} from '../core/envcheck.js';
 
 // ---------------------------------------------------------------------------
 // Status icons
@@ -71,6 +74,44 @@ export function printHardwareSummary(hw: HardwareCapabilities): void {
   for (const note of hw.notes) {
     console.log(`  ${chalk.yellow('⚠')} ${chalk.dim(note)}`);
   }
+}
+
+// ---------------------------------------------------------------------------
+// llm-env-check catalog recommendations
+// ---------------------------------------------------------------------------
+
+const RATING_COLOR: Record<ModelRecommendation['rating'], (s: string) => string> = {
+  GOOD: chalk.green,
+  BORDERLINE: chalk.yellow,
+  'NOT RECOMMENDED': chalk.dim,
+};
+
+export function printCatalogRecommendations(
+  recs: ModelRecommendation[],
+  profile: string,
+): void {
+  if (recs.length === 0) return;
+
+  printSection(`Recommended Models (${profile} profile, from llm-env-check)`);
+
+  const nameWidth = Math.max(...recs.map((r) => r.name.length), 10);
+  const ratingWidth = Math.max(...recs.map((r) => r.rating.length + 2)); // +2 for brackets
+
+  for (const r of recs) {
+    const colored = RATING_COLOR[r.rating];
+    const tag = colored(`[${r.rating}]`.padEnd(ratingWidth));
+    const name = chalk.white(r.name.padEnd(nameWidth));
+    const size = chalk.dim(`~${r.estimatedMemoryGb} GB ${r.quantization}`);
+    const profileMatch = r.profiles.includes(profile as 'coding' | 'chat' | 'writing' | 'agentic')
+      ? chalk.cyan('★')
+      : ' ';
+    console.log(`  ${tag} ${profileMatch} ${name}  ${size}`);
+  }
+  console.log(
+    chalk.dim(
+      '  ★ = matches your profile.  GOOD = fits comfortably, BORDERLINE = tight fit.',
+    ),
+  );
 }
 
 export function printVSCodeCard(model: string): void {

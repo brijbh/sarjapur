@@ -348,3 +348,50 @@ These were noted in prior section entries and are not blocking the v0.1 build. L
 - README does not yet include a license badge or `npm install` instructions — these land with the v0.1 release commit when published.
 
 ---
+
+## Post-v0.1 — Entry-point UX rework + llm-env-check catalog integration
+**Completed:** 2026-06-22T20:50:00Z
+**Commit:** `feat: bare local-ai runs scan; surface llm-env-check catalog recommendations`
+
+### What was done
+Two user-reported gaps after v0.1 build landed:
+
+**Gap 1 — `local-ai` (bare) ran setup, but users expect a read-only diagnostic from the bare command.**
+
+- `src/cli.ts` — rewired the root program: added a `.action()` on the root that calls `runDoctor()`, and switched to `parseAsync` so the async action can complete. Previously the no-args path tried to manually invoke `runSetup()` after `program.parse()`, but commander v12 auto-prints help and short-circuits when no subcommand is matched — so the manual fallback never ran. Setting `.action()` on the root tells commander not to print help.
+- `local-ai doctor` is preserved as an explicit subcommand alias for back-compat.
+- `local-ai setup` is now opt-in (no longer the bare default).
+- `README.md` updated: commands table reflects the new bare behavior; intro shows both `npx local-ai` (diagnostic) and `npx local-ai setup` (guided setup) side-by-side.
+
+**Gap 2 — `llm-env-check` was only used for hardware tiers; its `recommendModels` catalog was never surfaced. Users had no idea what to install.**
+
+- `src/core/envcheck.ts`:
+  - Imported `recommendModels` + `ModelRecommendation` + `Profile` from llm-env-check (also re-exported for downstream callers).
+  - Added `catalogProfile: Profile` and `catalogRecommendations: ModelRecommendation[]` to `HardwareCapabilities`.
+  - `getHardwareCapabilities()` now calls `recommendModels(system, 'coding')` and stores the result. Wrapped in try/catch so a recommendation failure never breaks a scan.
+  - Added `pickBestCatalogModel(recs, profile)` helper: prefers GOOD-rated entries that match the requested profile (largest first), falls back to any GOOD entry, then to BORDERLINE-for-profile. Returns null only if nothing fits.
+- `src/utils/format.ts` — added `printCatalogRecommendations(recs, profile)`:
+  - Color-codes by rating (green/yellow/dim for GOOD/BORDERLINE/NOT RECOMMENDED).
+  - Marks profile-matching entries with `★`.
+  - Auto-widths the rating tag so `[NOT RECOMMENDED]` doesn't misalign rows.
+- `src/commands/doctor.ts` — calls `printCatalogRecommendations` after the Coding Tools section. Bare `local-ai` and `local-ai doctor` both produce the same output (since bare uses the same function).
+- `src/core/workflow.ts` — LM Studio post-install instructions now use the top catalog pick instead of the hardcoded `Qwen3-Coder-30B-A3B-Instruct-GGUF`. Surfaces the catalog entry's `useCase`, `estimatedMemoryGb`, `quantization`, and `rating`. The hardcoded Qwen3-Coder-30B was unsuitable for most hardware (e.g. doesn't fit in 8 GB VRAM); the catalog pick adapts per machine.
+
+### Verification
+- `npm run typecheck` — zero errors.
+- `npm run build` — zero errors.
+- `node dist/cli.js` (bare) — runs full doctor flow including the new "Recommended Models" section. On this machine (RTX 5060 Laptop GPU, 8 GB VRAM, 31.3 GB RAM):
+  - 2 GOOD coding-profile entries: Qwen2.5-Coder 7B, DeepSeek-Coder 6.7B.
+  - Qwen2.5-Coder 14B correctly flagged NOT RECOMMENDED (10 GB > 8 GB VRAM).
+- `node dist/cli.js doctor` — identical output (subcommand alias confirmed).
+- `node dist/cli.js --help` — still lists all commands including `doctor`, `setup`, etc.
+- Exit 1 when state file missing (unchanged).
+
+### Discovered bug (caller, fixed)
+Initial inspection called `recommendModels('coding', system)` (profile, system) — wrong order. Signature is `recommendModels(system, profile)`. With swapped args, every entry reads "undefined GB total RAM" because the string `'coding'` is treated as system. Fixed before integration.
+
+### Known gaps still standing
+- No live end-to-end run of `local-ai setup` (still gated on writing to `%USERPROFILE%` — per agent guardrails, not exercised during build).
+- LM Studio winget package ID is still a 3-candidate try-list (Appendix C item, unchanged).
+
+---

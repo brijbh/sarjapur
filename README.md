@@ -5,10 +5,11 @@
 It scans your hardware, picks a model your machine can actually run, installs the supporting tools (LM Studio + opencode), writes the opencode config that points at your local server, and launches you into a working chat/coding session.
 
 ```
-npx local-ai
+npx local-ai          # diagnostic scan — read-only, no installs
+npx local-ai setup    # guided setup — installs + config (asks before any write)
 ```
 
-That single command runs the full guided setup. On subsequent runs it verifies your saved setup is still healthy and prints `Local AI is ready` without re-installing anything.
+Run `npx local-ai` first to see what your hardware can run, what's already installed, and which models `llm-env-check` recommends for your machine. When you're ready to actually wire things up, run `npx local-ai setup`. After the first successful setup, both commands verify the saved setup live — they never re-install if nothing has changed.
 
 ---
 
@@ -66,9 +67,9 @@ winget install OpenJS.NodeJS.LTS
 
 | Command | What it does |
 |---|---|
-| `npx local-ai` | Runs `setup` by default. Scans hardware, walks you through any missing tools, writes opencode config, optionally launches opencode or VS Code. |
-| `local-ai setup` | Same as above, explicit form. |
-| `local-ai doctor` | Read-only diagnostic. Prints hardware, system tools, LM Studio status, compatible models, and a recommendation. Exits 0 if everything is `ok`, otherwise 1. |
+| `npx local-ai` | Same as `doctor` — read-only diagnostic scan. Prints hardware, system tools, LM Studio status, currently loaded models, and `llm-env-check`'s catalog recommendations for your machine. No installs, no writes. Exits 0 if everything is `ok`, 1 otherwise. |
+| `local-ai doctor` | Explicit form of the bare command above. |
+| `local-ai setup` | Guided setup. Scans hardware, walks you through any missing tools (asks Yes/No before each install), writes opencode config (with a backup of any existing one), saves state, optionally launches opencode or VS Code. |
 | `local-ai status` | Verifies a previously saved setup against the live system. Updates `lastVerified` if all checks pass. |
 | `local-ai repair` | Live-verifies saved state. Offers to update the saved model if it's no longer loaded, recreate a missing/invalid opencode config, etc. |
 | `local-ai reset` | Deletes the saved state file. Does NOT uninstall tools or remove opencode config. |
