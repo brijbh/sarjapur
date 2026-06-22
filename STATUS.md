@@ -204,3 +204,35 @@ Not executed end-to-end during this section: running `setup` would prompt for in
 - `Profile` is hardcoded to `'coding'` for v0.1 (matches `llm-env-check`'s default profile for coding tools).
 
 ---
+
+## Section 8 — opencode Integration
+**Completed:** 2026-06-22T15:12:00Z
+**Commit:** `feat: implement opencode config generation, merge, and backup`
+
+### What was done
+Most of Section 8's surface was pulled forward into Section 7 (because the workflow flows directly call `writeOpencodeConfig` / `launchOpencode`). This section verifies the implementation and closes two spec gaps:
+
+- **Rename: `checkOpencodeConfigFile` → `checkOpencodeConfig`** ([integrations/opencode.ts](src/integrations/opencode.ts)) to match Task 8.4's exact signature `Promise<{ exists, path, valid }>`. No callers existed, so the rename was safe. Note: `scanner.ts` also exports a `checkOpencodeConfig` returning `Promise<CheckResult>` — different module, different return type; consumers import by module path.
+- **Fix: human-name derivation now matches Appendix B exactly.** Previous implementation used `charAt(0).toUpperCase() + slice(1)` which left `30b` and `a3b` lowercase on the trailing `b`. New `titleCaseSegment()` capitalizes the first letter of each hyphen segment AND any letter immediately following a digit. Verified end-to-end against Appendix B's literal example:
+  - Input: `qwen3-coder-30b-a3b-instruct`
+  - Output: `Qwen3 Coder 30B A3B Instruct (local)` — matches Appendix B exactly.
+- **Merge logic verified in-memory** against all four spec rules (no file writes). Confirmed via inline node script:
+  - `$schema` preserved if existing — PASS
+  - Top-level user keys preserved (`someUserSetting: 42`) — PASS
+  - Other providers untouched (`provider.openai.models['gpt-4']`) — PASS
+  - Existing lmstudio model entries preserved (`legacy-old-model`) while new model added (`qwen3-coder-30b-a3b-instruct`) — PASS
+
+### Task coverage (audit)
+| Task | Implemented in | Status |
+|---|---|---|
+| 8.1 — `generateOpencodeConfig(modelId)` | Section 7 + Appendix B fix here | ✓ |
+| 8.2 — `mergeOpencodeConfig(existing, generated)` | Section 7 | ✓ (verified) |
+| 8.3 — `writeOpencodeConfig(modelId)` with backup + merge flow | Section 7 | ✓ |
+| 8.4 — `checkOpencodeInstalled()` + `checkOpencodeConfig()` | Section 7 + rename here | ✓ |
+| 8.5 — `launchOpencode(cwd)` Windows spawn | Section 7 | ✓ |
+| 8.6 — typecheck + build | Here | ✓ — zero errors |
+
+### Known gaps or deferred items
+- No end-to-end run of `writeOpencodeConfig` against the real `%USERPROFILE%\.config\opencode\opencode.json` — gated on user consent at runtime, not exercised during the build.
+
+---

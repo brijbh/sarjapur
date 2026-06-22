@@ -13,11 +13,29 @@ import { runCommand } from '../utils/command.js';
 // generateOpencodeConfig — Task 8.1
 // ---------------------------------------------------------------------------
 
+// Title-case rule from Appendix B: capitalize first letter of each
+// hyphen-separated segment AND any letter immediately following a digit
+// (so "30b" → "30B", "a3b" → "A3B", "instruct" → "Instruct").
+function titleCaseSegment(segment: string): string {
+  if (segment.length === 0) return segment;
+  let out = segment.charAt(0).toUpperCase();
+  for (let i = 1; i < segment.length; i++) {
+    const prev = segment[i - 1] ?? '';
+    const ch = segment[i] ?? '';
+    if (/[0-9]/.test(prev) && /[a-z]/.test(ch)) {
+      out += ch.toUpperCase();
+    } else {
+      out += ch;
+    }
+  }
+  return out;
+}
+
 function deriveHumanName(modelId: string): string {
   return modelId
     .split('-')
     .filter((part) => part.length > 0)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .map(titleCaseSegment)
     .join(' ');
 }
 
@@ -139,7 +157,7 @@ export interface OpencodeConfigCheck {
   valid: boolean;
 }
 
-export async function checkOpencodeConfigFile(): Promise<OpencodeConfigCheck> {
+export async function checkOpencodeConfig(): Promise<OpencodeConfigCheck> {
   const exists = await fileExists(OPENCODE_CONFIG_FILE);
   if (!exists) return { exists: false, path: OPENCODE_CONFIG_FILE, valid: false };
   const parsed = await readJsonFile<unknown>(OPENCODE_CONFIG_FILE);
