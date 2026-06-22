@@ -142,3 +142,28 @@ Strategy A — programmatic import. `detectSystem()` is synchronous; wrapped in 
 - `dist/` is git-ignored as per `.gitignore`.
 
 ---
+
+## Section 6 — Doctor and Status Commands
+**Completed:** 2026-06-22T13:41:00Z
+**Commit:** `feat: implement doctor and status commands`
+
+### What was done
+- `src/commands/doctor.ts` — fully implemented `runDoctor()`:
+  - Prints welcome banner via `printHeader()`.
+  - Calls `runScan()` then `buildAdvice()`.
+  - Prints hardware summary (`printHardwareSummary`), then check results grouped into sections: System, Local AI Runtime (with per-model list showing `← recommended`), Coding Tools, Saved Setup.
+  - Prints ordered recommendations from `buildAdvice()`.
+  - Exits `0` if all checks pass; exits `1` if any check is `warn`, `missing`, or `error`.
+- `src/commands/status.ts` — fully implemented `runStatus()`:
+  - Reads state file via `readState()`. If missing: prints error + `Run: local-ai setup` → exits 1.
+  - Prints saved state (profile, workflow, provider, server, model, config path, last verified).
+  - Runs live verification: `checkLMStudio()` (server + model availability by ID), `checkOpencodeConfig()`.
+  - If all pass: updates `lastVerified` timestamp in state file atomically, prints `Local AI is ready.` + `Next command: opencode` → exits 0.
+  - If any fail: prints `Run: local-ai repair` → exits 1.
+- `npm run typecheck` — zero errors.
+- `npm run build` — zero errors.
+
+### Known gaps or deferred items
+- No deferred items for this section. Doctor and status are complete read-only commands.
+
+---
