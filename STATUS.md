@@ -81,3 +81,22 @@ Strategy A — programmatic import. `detectSystem()` is synchronous; wrapped in 
 - `SARJAPUR_AGENT_PROMPT.md` is untracked in git (not in `.gitignore`); included in this commit as project specification.
 
 ---
+
+## Section 3 — LM Studio Provider and Model Filtering
+**Completed:** 2026-06-22T13:16:00Z
+**Commit:** `feat: implement LM Studio provider detection and model filtering`
+
+### What was done
+- `src/providers/lmstudio.ts` — fully implemented:
+  - **Task 3.1** — `fetchModelsRaw()`: HTTP GET to `http://127.0.0.1:1234/v1/models` with 3-second `AbortController` timeout. Never throws — returns `{ ok, reason }` union. Handles ECONNREFUSED, abort, and non-200 responses.
+  - **Task 3.2** — Zod schemas: `LMStudioModelSchema` (id, object, owned_by) and `LMStudioModelsResponseSchema` (data array + object). Schema mismatch returns `status: 'warn'` with parse error detail.
+  - **Task 3.3** — `filterCompatibleModels(modelIds, hardware)`: parses parameter size from model IDs via regex (1B–70B+), cross-references against `hardware.runnableModelTiers`. Unknown sizes are included. If no models survive filtering, all models returned.
+  - **Task 3.4** — `selectPreferredModel(modelIds, hardware)`: applies 5-tier preference rules (qwen3-coder > qwen3 > qwen > coder > code). Among ties, picks the largest runnable tier. Returns `null` if no rule matches.
+  - **Task 3.5** — `checkLMStudio(hardware)`: orchestrates server check + model list + filtering + selection. Returns `{ server: CheckResult, models: ModelCheckResult }`.
+- `src/core/scanner.ts` — **Task 3.6**: imported `checkLMStudio` and wired into `runScan()` via `Promise.all`. Removed Section 3 stubs. `lmstudio` and `models` fields now populated from live LM Studio server.
+- `npm run typecheck` — passes with zero errors.
+
+### Known gaps or deferred items
+- `checkLMStudio()` is exported independently so Section 7 (setup workflow) can re-scan LM Studio after user installs a model, without re-running the full scan.
+
+---

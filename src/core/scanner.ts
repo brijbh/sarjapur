@@ -4,6 +4,7 @@ import { promises as fs } from 'node:fs';
 import { getHardwareCapabilities, type HardwareCapabilities } from './envcheck.js';
 import { runCommand } from '../utils/command.js';
 import { STATE_FILE, OPENCODE_CONFIG_FILE } from './paths.js';
+import { checkLMStudio } from '../providers/lmstudio.js';
 
 export type CheckStatus = 'ok' | 'warn' | 'missing' | 'error';
 
@@ -198,30 +199,31 @@ export async function checkOpencodeConfig(): Promise<CheckResult> {
 export async function runScan(): Promise<ScanResult> {
   const hardware = await getHardwareCapabilities();
 
-  const [osR, archR, nodeR, npmR, gitR, wingetR, opencodeR, vscodeR, stateR, opencodeCfgR] =
-    await Promise.all([
-      checkOS(),
-      checkArch(),
-      checkNode(),
-      checkNpm(),
-      checkGit(),
-      checkWinget(),
-      checkOpencode(),
-      checkVSCode(),
-      checkStateFile(),
-      checkOpencodeConfig(),
-    ]);
-
-  const lmstudio: CheckResult = {
-    label: 'LM Studio',
-    status: 'missing',
-    detail: 'LM Studio check is populated in Section 3.',
-  };
-  const models: ModelCheckResult = {
-    label: 'Models',
-    status: 'missing',
-    detail: 'Model check is populated in Section 3.',
-  };
+  const [
+    osR,
+    archR,
+    nodeR,
+    npmR,
+    gitR,
+    wingetR,
+    opencodeR,
+    vscodeR,
+    stateR,
+    opencodeCfgR,
+    lmCheck,
+  ] = await Promise.all([
+    checkOS(),
+    checkArch(),
+    checkNode(),
+    checkNpm(),
+    checkGit(),
+    checkWinget(),
+    checkOpencode(),
+    checkVSCode(),
+    checkStateFile(),
+    checkOpencodeConfig(),
+    checkLMStudio(hardware),
+  ]);
 
   return {
     hardware,
@@ -233,8 +235,8 @@ export async function runScan(): Promise<ScanResult> {
     winget: wingetR,
     opencode: opencodeR,
     vscode: vscodeR,
-    lmstudio,
-    models,
+    lmstudio: lmCheck.server,
+    models: lmCheck.models,
     state: stateR,
     opencodeConfig: opencodeCfgR,
   };
