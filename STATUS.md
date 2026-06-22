@@ -294,3 +294,21 @@ Most of Section 8's surface was pulled forward into Section 7 (because the workf
 - v0.1 does not implement deletion. Stubbed per spec.
 
 ---
+
+## Section 11 — Documentation
+**Completed:** 2026-06-22T17:45:00Z
+**Commit:** `docs: add README and documentation files`
+
+### What was done
+- `README.md` (134 lines) — what `local-ai` does and doesn't do, how it works, the `npx local-ai` Node prerequisite, v0.1 supported stack, full commands table, three-tier safety summary, terminal and VS Code workflows, "how to test VS Code" checklist, no-API-key note, footer.
+- `docs/ARCHITECTURE.md` (137 lines) — two-layer scanner / setup-assistant design with ASCII diagram, `llm-env-check` wrapper rationale, hardware-to-recommendation data flow, state file shape + why live-verified on every run, opencode merge strategy rules, extension points for v0.2+.
+- `docs/ROADMAP.md` (49 lines) — v0.1 (current), v0.2 (Ollama + macOS + cleanup deletion), v0.3 (llama.cpp + Aider/Continue CLI + Linux + non-interactive flags), future ideas, explicit non-goals.
+- `docs/SAFETY.md` (127 lines) — three-tier permission model with concrete examples, backup naming convention, what `local-ai` never does, exact audit paths, full manual undo procedure, "verify live every run" rationale.
+- `docs/UX.md` (110 lines) — core principle ("Check automatically. Ask before changes. Explain manual fallback. Do not repeat completed setup."), canonical 10-step journey, VS Code workflow testing checklist, error-state table, exit-code table, Ctrl+C handling.
+
+Every document ends with `*Developed by Brijesh B*` per spec.
+
+### Known gaps or deferred items
+- None. Documentation is complete to v0.1 scope. The README does not include a license badge or installation-from-npm instructions because v0.1 is not yet published to npm — those land with the v0.1 release commit.
+
+---
