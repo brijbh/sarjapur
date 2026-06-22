@@ -236,3 +236,36 @@ Most of Section 8's surface was pulled forward into Section 7 (because the workf
 - No end-to-end run of `writeOpencodeConfig` against the real `%USERPROFILE%\.config\opencode\opencode.json` — gated on user consent at runtime, not exercised during the build.
 
 ---
+
+## Section 9 — Repair and Reset Commands
+**Completed:** 2026-06-22T15:29:00Z
+**Commit:** `feat: implement repair and reset commands`
+
+### What was done
+- `src/commands/repair.ts` — full `runRepair()` (Task 9.1):
+  - Reads state via `readState()`. If missing → prints `No saved setup found.` + `Run: local-ai setup` → exits 1.
+  - Prints the saved state (model / workflow / serverUrl / configPath / lastVerified).
+  - Live verification via `checkLMStudio(hardware)`:
+    - Server unreachable → exit 1 with instruction to start LM Studio.
+    - No models loaded → exit 1 with instruction to load a model.
+    - Saved model ID not in `/v1/models` → list available models, propose a replacement (prefers `selectedModel` → first compatible → first available), ask consent to swap.
+  - `checkOpencodeConfig()`:
+    - Missing → ask to recreate (calls `writeOpencodeConfig`).
+    - Exists but invalid JSON → ask to back-up-and-rewrite.
+    - Valid but model changed during this repair → ask to update config to the new model.
+    - Valid and unchanged → success.
+  - Final re-verification: LM Studio reachable + active model loaded + opencode config exists + valid. If any fails → exit 1.
+  - On success: atomic state write with new `model` (if swapped) and fresh `lastVerified` (ISO 8601 UTC). Prints `Setup verified and state updated.` + `Next command: opencode` → exits 0.
+- `src/commands/reset.ts` — full `runReset()` (Task 9.2):
+  - Prints scope warning ("opencode config and installed tools are not affected").
+  - `ask()` confirmation. If declined: prints `Reset cancelled.` → exits 0.
+  - On approval: `clearState()` (already ignores ENOENT) → prints `State cleared.` + `Run: local-ai setup to start fresh.` → exits 0.
+- `npm run typecheck` — zero errors.
+- `npm run build` — zero errors.
+- `node dist/cli.js repair` (no state file) verified: exits 1 as spec'd.
+
+### Known gaps or deferred items
+- `repair` does not re-install missing base tools (Git, LM Studio, opencode). That is `setup`'s job. If the user has uninstalled opencode after setup, `repair` will detect the missing config but not the missing binary — running `setup` again is the documented path.
+- `reset` is a single-tier confirmation (Yes/No). The prompt's permission model reserves `strongConfirm` for "Overwriting an existing config file / Deleting any file / Modifying anything outside the state/config paths". The state file is **inside** the state path so single-tier `ask()` is correct per the safety policy.
+
+---
