@@ -120,3 +120,25 @@ Strategy A — programmatic import. `detectSystem()` is synchronous; wrapped in 
 - `advisor.ts` sets `preferredWorkflow: null` — this is populated after the user chooses a workflow in the setup command (Section 7).
 
 ---
+
+## Section 5 — CLI Entry Point and Command Skeletons
+**Completed:** 2026-06-22T13:28:00Z
+**Commit:** `feat: implement CLI entry point and command skeletons`
+
+### What was done
+- `src/cli.ts` — full commander entry point: name `local-ai`, description + author, version `0.1.0`. Imports and registers all 6 commands. Default action (no subcommand) calls `runSetup()`.
+- `src/commands/doctor.ts` — `register()` + `runDoctor()` stub (prints `[not yet implemented]`).
+- `src/commands/setup.ts` — `register()` + `runSetup()` stub.
+- `src/commands/status.ts` — `register()` + `runStatus()` stub.
+- `src/commands/repair.ts` — `register()` + `runRepair()` stub.
+- `src/commands/reset.ts` — `register()` + `runReset()` stub.
+- `src/commands/cleanup.ts` — `register()` + `runCleanup()` stub (includes `--delete` option stub).
+- `npm run typecheck` — passes with zero errors.
+- `npm run build` — passes with zero errors. `dist/` generated.
+- `node dist/cli.js --help` — verified: all 6 commands listed with correct descriptions.
+
+### Known gaps or deferred items
+- All `run*()` functions are stubs — implemented in Sections 6, 7, 9, 10.
+- `dist/` is git-ignored as per `.gitignore`.
+
+---
