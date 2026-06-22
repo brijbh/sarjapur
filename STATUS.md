@@ -61,3 +61,23 @@ interface SystemInfo {
 - `README.md` not created — deferred to Section 11.
 
 ---
+
+## Section 2 — llm-env-check Integration and Scanner
+**Completed:** 2026-06-22T13:09:00Z
+**Commit:** `feat: implement llm-env-check integration and scanner module`
+
+### What was done
+- `src/core/envcheck.ts` — **Strategy A (programmatic API)** used. Imports `detectSystem` from `llm-env-check` directly (it is a sync function returning `SystemInfo`). Maps `SystemInfo` → `HardwareCapabilities`. Derives `runnableModelTiers` from the RAM/VRAM table in the prompt (llm-env-check does not return tier data). Infers GPU acceleration type (CUDA/Metal/Vulkan/ROCm) from `gpuName` string matching. Exports `getHardwareCapabilities(): Promise<HardwareCapabilities>` and `ModelTier` type.
+- `src/core/paths.ts` — all path constants: `STATE_DIR`, `STATE_FILE`, `OPENCODE_CONFIG_DIR`, `OPENCODE_CONFIG_FILE`, `LMSTUDIO_BASE_URL`, `LMSTUDIO_MODELS_ENDPOINT`, `LMSTUDIO_MODEL_DIRS`.
+- `src/core/scanner.ts` — `CheckStatus`, `CheckResult`, `ModelCheckResult`, `ScanResult` types defined and exported. Implements: `checkOS()`, `checkArch()`, `checkNode()`, `checkNpm()`, `checkGit()`, `checkWinget()`, `checkOpencode()`, `checkVSCode()`, `checkStateFile()`, `checkOpencodeConfig()`. `runScan()` calls `getHardwareCapabilities()` first, then runs all other checks in parallel via `Promise.all()`. `lmstudio` and `models` fields are stubs — populated in Section 3.
+- `src/utils/command.ts` — `runCommand(cmd, args): Promise<string | null>` and `commandExists(cmd): Promise<boolean>` implemented using `execa` with 5-second timeout; never throws.
+- `npm run typecheck` — passes with zero errors.
+
+### llm-env-check invocation strategy
+Strategy A — programmatic import. `detectSystem()` is synchronous; wrapped in an `async` function for interface consistency. VRAM tier logic and GPU acceleration type are derived internally since `llm-env-check` v1.0.0 does not expose those fields directly.
+
+### Known gaps or deferred items
+- `lmstudio` and `models` fields in `runScan()` are intentional stubs — wired up in Section 3.
+- `SARJAPUR_AGENT_PROMPT.md` is untracked in git (not in `.gitignore`); included in this commit as project specification.
+
+---
