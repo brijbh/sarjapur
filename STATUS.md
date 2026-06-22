@@ -164,6 +164,43 @@ Strategy A — programmatic import. `detectSystem()` is synchronous; wrapped in 
 - `npm run build` — zero errors.
 
 ### Known gaps or deferred items
-- No deferred items for this section. Doctor and status are complete read-only commands.
+- **Cosmetic — banner doubles the author tagline.** `runDoctor`/`runStatus` call `printHeader('Developed by Brijesh B')`, but `printHeader` ([utils/format.ts:22-23](src/utils/format.ts:22)) already emits the tagline on its own line. Result: `Welcome to local-ai  —  Developed by Brijesh B` immediately followed by `Developed by Brijesh B`. Fix: pass an empty title or change `printHeader` to omit the em-dash when title is empty.
+- **Cosmetic — LM Studio label drift.** Scanner labels the check `LM Studio`; the prompt's reference doctor output shows `LM Studio server reachable`. Functionally identical; only the on-screen label differs.
+- Doctor and status verified end-to-end on the dev machine (RTX 5060 Laptop GPU, 31.3 GB RAM, LM Studio reachable, opencode 1.14.41 installed). `status` exits 1 with `No setup found.` as expected; `doctor` exits 1 because state file is missing.
+
+---
+
+## Section 7 — Setup Command and Workflow Orchestration
+**Completed:** 2026-06-22T14:48:00Z
+**Commit:** `feat: implement setup command and workflow orchestration`
+
+### What was done
+- `src/commands/setup.ts` — full `runSetup()` (Task 7.1): prints banner via `printHeader('Setup')` (avoids the Section 6 banner-duplication issue), runs `runScan()` + `buildAdvice()`, prints hardware + grouped checks, exits 0 with "already set up" message when `advice.isSetupComplete`, lists compatible models with `← recommended` tag, asks workflow target via `choose<WorkflowTarget>(['terminal','vscode','both'])`, then delegates to `runSetupWorkflow()`.
+- `src/core/workflow.ts` — full orchestrator replacing the Section 4 stub:
+  - **Task 7.2 — installation phase.** `installMissingTools(scan, advice)` runs three sub-installers in order. Each gates on `scan.<tool>.status !== 'ok'` and `ask()` permission. winget availability is re-checked before each winget call; if missing, prints a manual download URL. Git → `winget install --id Git.Git`. LM Studio tries `ElementLabs.LMStudio`, `LMStudio.LMStudio`, `lmstudio` in order until one succeeds (since the prompt's Appendix C flags the ID as needing verification). opencode → `npm install -g opencode`. After LM Studio install: prints download steps for `advice.preferredModel`, then `waitForUserReady()` (Enter to continue, `S` to skip).
+  - **Task 7.3 — terminal flow.** `runTerminalSetup` verifies opencode, LM Studio, and a loaded model; calls `ensureOpencodeConfig()` (only writes if missing or user approves merge); calls `saveStateIfApproved('terminal', model, profile)`; prints "Terminal workflow ready" + `Next command: opencode`; optionally spawns `cmd /c start powershell -NoExit -Command "Set-Location '<cwd>'; opencode"` via `launchOpencode()` with detached + unref.
+  - **Task 7.4 — VS Code flow.** `runVSCodeSetup` reuses `ensureOpencodeConfig` + `saveStateIfApproved`, then `printVSCodeCard(model)` (the exact card text from `utils/format.ts`), then optionally `launchVSCode(cwd)` via `spawn('code', [cwd], { shell: true, detached: true })`. If `code` is missing, prints the install instructions and continues — the user can still use opencode inside VS Code's terminal.
+  - **Task 7.5 — both flow.** Single config write + single state save (no duplication), then both launch prompts.
+  - LM Studio is re-scanned via `checkLMStudio(hardware)` after the install phase so the workflow sees a freshly-loaded model without a full `runScan()`.
+  - Model resolution: prefers `models.selectedModel` → `advice.preferredModel` → `choose()` from compatible model IDs → bail with a warning if none.
+- `src/integrations/opencode.ts` — implemented (pulled forward from Section 8 as Section 7 depends on it):
+  - `generateOpencodeConfig(modelId)` — Task 8.1 — emits the `$schema` + `provider.lmstudio` block with `@ai-sdk/openai-compatible`, `baseURL: http://127.0.0.1:1234/v1`, and the model entry keyed by the raw LM Studio ID with a derived human name (kebab → Title Case + " (local)").
+  - `mergeOpencodeConfig(existing, generated)` — Task 8.2 — only touches `provider.lmstudio`; preserves existing `$schema`, other providers, and existing lmstudio fields; deep-merges `models` with existing winning on key conflict.
+  - `writeOpencodeConfig(modelId)` — Task 8.3 — if config exists: asks via `ask()`, backs up via `backupFile()` (timestamped `YYYYMMDD-HHMM` per Section 4), then merges and writes. If no consent: prints the would-be config and returns `written: false`. If no existing config: writes fresh. Returns `{ backedUp, backupPath, written }`.
+  - `checkOpencodeInstalled()` and `checkOpencodeConfigFile()` — Task 8.4 — added (the existing `checkOpencodeConfig` in `scanner.ts` is the scanner-level variant; this returns the `{ exists, path, valid }` shape the prompt specifies for Section 8).
+  - `launchOpencode(cwd)` — Task 8.5 — Windows path: `cmd /c start "" powershell -NoExit -Command "Set-Location '<cwd>'; opencode"` (the empty `""` is the Windows-`start` window title slot, prevents the cwd being mis-parsed as the title). Non-Windows fallback. On failure: prints `cd <cwd>` + `opencode` manual instructions.
+- `src/integrations/vscode.ts` — `checkVSCodeInstalled()` + `launchVSCode(cwd)` (spawn `code <cwd>` with `shell: true` since `code` is a .cmd on Windows; detached + unref).
+- `npm run typecheck` — zero errors.
+- `npm run build` — zero errors.
+- `node dist/cli.js --help` — confirms `setup` is registered with the correct description.
+
+### VS Code launch test result
+Not executed end-to-end during this section: running `setup` would prompt for installs and write `%USERPROFILE%\.local-ai\state.json` + `%USERPROFILE%\.config\opencode\opencode.json`, both of which are gated by `ask()` at runtime per the prompt's permission model. The build passes, all command surfaces exist, and the launch helpers (`launchOpencode`, `launchVSCode`) use the documented Windows patterns. End-to-end verification deferred to the user / a later integration test.
+
+### Known gaps or deferred items
+- **LM Studio winget ID is a best-effort try-list** (`ElementLabs.LMStudio`, `LMStudio.LMStudio`, `lmstudio`). Per Appendix C of the prompt this needs `winget search lmstudio` verification on a real machine. Loop tries each until one succeeds; falls back to printing the manual download URL.
+- **opencode integration was pulled forward from Section 8** because Section 7's terminal/VS Code flows directly call `writeOpencodeConfig()` and `launchOpencode()`. Section 8 will validate the implementation and add any missing surface area (no further work expected beyond verification).
+- **No end-to-end run of `local-ai setup`** during this section — see "VS Code launch test result" above.
+- `Profile` is hardcoded to `'coding'` for v0.1 (matches `llm-env-check`'s default profile for coding tools).
 
 ---
