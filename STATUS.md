@@ -395,3 +395,52 @@ Initial inspection called `recommendModels('coding', system)` (profile, system) 
 - LM Studio winget package ID is still a 3-candidate try-list (Appendix C item, unchanged).
 
 ---
+
+## Post-v0.1 — Action-first UX rework
+**Completed:** 2026-06-23T07:06:00Z
+**Commit:** `feat: action-first UX — bare local-ai runs setup with 2-option model picker`
+
+### Motivation
+User tested the prior v0.1 build and reported the UX was confusing — running `local-ai` dumped a 30-line diagnostic wall with hardware tiers, a 10-row model catalog with three rating colors, and required the user to think about model selection. The user's actual goal: *"I want a local AI on this machine. Make it work. Don't ask me about models."*
+
+### What changed
+**Entry point flipped (again):**
+- `src/cli.ts` — bare `local-ai` now runs `runSetup()`, not `runDoctor()`. Setup short-circuits in 2 lines when already ready, so the bare command is safe to run anytime.
+- `local-ai doctor` kept unchanged as the power-user diagnostic with the full catalog.
+
+**`src/commands/setup.ts` — rewritten action-first:**
+- New `quickReadinessCheck()` runs first. If state exists + LM Studio reachable + saved model loaded + opencode config valid + opencode installed → prints `Local AI is ready (<model> via LM Studio). Next command: opencode` and exits 0.
+- Not ready → single welcome line, single `✓ Hardware: <RAM>, <GPU>` line, then immediately asks: `Where do you want to use it? Terminal / VS Code / Both` (with descriptions inline on each option).
+- Total output before the first question: 6 lines (was ~30).
+- Hands off to `runSetupWorkflow(target, hardware)` — signature simplified from `(target, scan, advice)` since workflow does its own scans now.
+
+**`src/core/modelPicker.ts` — NEW:**
+- `topTwoPicks(recs, profile)` picks two compatible models from llm-env-check's catalog: smallest GOOD-for-profile (fastest) + first different-family entry (so we don't show Qwen2.5-Coder twice).
+- `pickModelToInstall(recs, profile)` shows just those two with their `useCase` labels (e.g. "Fast coding assistant", "Coding specialist"). A third option `Show all N compatible models…` expands to the full catalog. If only one model fits, picker is skipped entirely.
+- Auto-skipped at runtime when a compatible chat/coding model is already loaded in LM Studio.
+
+**`src/core/workflow.ts` — rewritten:**
+- Compact one-line tool summary: `✓ Git, opencode, LM Studio already installed` (was: separate section per tool).
+- Per-missing-tool install prompts with in-line progress indicators (`→ Installing Git…` → overwritten with `✓ Git installed`).
+- Re-scan LM Studio after potential install, then either reuse a loaded compatible model or invoke the picker.
+- State save and launch are now silent defaults (no extra "Save state? Yes/No" prompt — the user already opted into setup; saving is implied).
+- Backed up Section 6's separated install/launch prompts. The previous flow had 6+ Yes/No prompts; this has 0 mandatory prompts after the workflow choice (only the consent prompts before each tool install, which remain per the safety model).
+
+**`src/providers/lmstudio.ts` — embedding-model fix:**
+- Added `isEmbeddingModel(id)` that matches `/embed/i`. Now `filterCompatibleModels` excludes embedding models from the "compatible" list. Previously, the user's machine had only `text-embedding-nomic-embed-text-v1.5` loaded and the scanner reported `1 compatible model` — incorrect since you cannot chat with an embedding model. Fix verified live.
+
+**Windows libuv crash fix:**
+- All `process.exit(0)` calls inside inquirer prompt cancellation handlers now go through `setImmediate(() => process.exit(0))` followed by an unsettled promise. Synchronous exit during inquirer's readline teardown was triggering `Assertion failed: !(handle->flags & UV_HANDLE_CLOSING)` on Windows + Node 24. Affected files: `permissions.ts` (ask/strongConfirm/choose), `modelPicker.ts`, `setup.ts`, `workflow.ts`.
+
+### Verified live on the dev machine
+- `npx local-ai` → action-first welcome → workflow question → "Checking what's needed… ✓ Git, opencode, LM Studio already installed" → auto-detected the user's loaded `qwen3-coder-30b-a3b-instruct` model and skipped the picker → prompted to back up + update existing opencode config (the standard safety prompt).
+- `npx local-ai doctor` → unchanged: full hardware section + every tool row + 10-row catalog with ratings and ★ profile markers.
+- Cancelling via empty stdin now exits cleanly with `Cancelled.` and code 0 — no more libuv assertion.
+
+### Known follow-ups
+- The 30B-A3B mixture-of-experts model leaks through the strict 13B tier check via the "if nothing compatible, return everything non-embedding" fallback. Works correctly by accident (MoE active params fit the user's 8 GB VRAM) but the tier logic doesn't know about MoE. Defer: add `aXb` (active-params) regex recognition in v0.2.
+- LM Studio model download still requires the user to manually open LM Studio, search, and start the server. No CLI-driven download in v0.1. v0.2 could try `lms get <id>` if the LM Studio CLI exposes it.
+- Setup still does not auto-launch LM Studio's GUI after install. Defer to v0.2.
+- README's command table updated; `docs/UX.md` not yet updated to match (still describes the old setup flow). Defer.
+
+---

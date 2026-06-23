@@ -1,11 +1,10 @@
 import { execa } from 'execa';
 import { input } from '@inquirer/prompts';
+import chalk from 'chalk';
 
-import type { ScanResult } from './scanner.js';
-import type { Advice } from './advisor.js';
-import { ask, choose } from './permissions.js';
+import type { HardwareCapabilities } from './envcheck.js';
+import { ask } from './permissions.js';
 import {
-  printSection,
   printSuccess,
   printWarn,
   printError,
@@ -18,15 +17,11 @@ import {
   checkOpencodeInstalled,
   launchOpencode,
 } from '../integrations/opencode.js';
-import { launchVSCode } from '../integrations/vscode.js';
+import { launchVSCode, checkVSCodeInstalled } from '../integrations/vscode.js';
 import { checkLMStudio } from '../providers/lmstudio.js';
 import { commandExists } from '../utils/command.js';
 import { LMSTUDIO_BASE_URL, OPENCODE_CONFIG_FILE } from './paths.js';
-import { pickBestCatalogModel } from './envcheck.js';
-
-// ---------------------------------------------------------------------------
-// WorkflowTarget — Task 4.8
-// ---------------------------------------------------------------------------
+import { pickModelToInstall } from './modelPicker.js';
 
 export type WorkflowTarget = 'terminal' | 'vscode' | 'both';
 
@@ -34,395 +29,264 @@ const PROFILE_DEFAULT = 'coding';
 const VERSION = '0.1.0';
 
 // ===========================================================================
-// Installation phase — Task 7.2
+// Compact tool-presence summary + per-tool install prompts
 // ===========================================================================
 
-async function waitForUserReady(): Promise<void> {
-  try {
-    const answer = await input({
-      message: 'Press Enter when LM Studio server is ready, or type S to skip:',
-      default: '',
-    });
-    if (answer.trim().toLowerCase() === 's') {
-      printWarn('Skipping LM Studio readiness check.');
+async function printToolStatusLine(present: Record<string, boolean>): Promise<void> {
+  const installed = Object.entries(present)
+    .filter(([, v]) => v)
+    .map(([k]) => k);
+  const missing = Object.entries(present)
+    .filter(([, v]) => !v)
+    .map(([k]) => k);
+
+  console.log(chalk.bold("Checking what's needed…"));
+  if (installed.length > 0) {
+    console.log(`  ${chalk.green('✓')} ${installed.join(', ')} ${chalk.dim('already installed')}`);
+  }
+  if (missing.length > 0) {
+    for (const tool of missing) {
+      console.log(`  ${chalk.red('✗')} ${tool}`);
     }
-  } catch {
-    console.log('\nCancelled.');
-    process.exit(0);
   }
 }
 
-async function installGitIfMissing(scan: ScanResult): Promise<void> {
-  if (scan.git.status === 'ok') return;
-
-  printSection('Git');
-  console.log('Git is not installed. Git is required for opencode.');
-  console.log('');
-
+async function installGit(hasWinget: boolean): Promise<void> {
   if (!(await ask('Install Git via winget?'))) {
-    printWarn('Skipping Git install. opencode may not work without Git.');
+    printWarn('Skipping Git. opencode may not work without it.');
     return;
   }
-
-  if (!(await commandExists('winget'))) {
-    printWarn('winget is not available on this system.');
-    console.log('  Download Git manually: https://git-scm.com/download/win');
+  if (!hasWinget) {
+    printWarn('winget not available. Download: https://git-scm.com/download/win');
     return;
   }
-
   try {
+    process.stdout.write(`  ${chalk.dim('→ Installing Git…')}\r`);
     await execa(
       'winget',
-      [
-        'install',
-        '--id',
-        'Git.Git',
-        '--silent',
-        '--accept-package-agreements',
-        '--accept-source-agreements',
-      ],
-      { stdio: 'inherit' },
+      ['install', '--id', 'Git.Git', '--silent', '--accept-package-agreements', '--accept-source-agreements'],
+      { stdio: 'ignore' },
     );
-    printSuccess('Git installation completed.');
+    console.log(`  ${chalk.green('✓')} Git installed                       `);
   } catch {
-    printError('Git install failed. Try manually: winget install Git.Git');
+    console.log(`  ${chalk.red('✗')} Git install failed. Try: winget install Git.Git`);
   }
 }
 
-async function installLMStudioIfMissing(scan: ScanResult, advice: Advice): Promise<void> {
-  if (scan.lmstudio.status === 'ok') return;
-
-  printSection('LM Studio');
-  console.log('LM Studio is not installed. LM Studio runs the local AI model.');
-  console.log('');
-
+async function installLMStudio(hasWinget: boolean): Promise<void> {
   if (!(await ask('Install LM Studio via winget?'))) {
-    printWarn('Skipping LM Studio install. local-ai cannot continue without it.');
+    printWarn('Skipping LM Studio. local-ai cannot continue without it.');
+    return;
+  }
+  if (!hasWinget) {
+    printWarn('winget not available. Download: https://lmstudio.ai/');
     return;
   }
 
-  if (!(await commandExists('winget'))) {
-    printWarn('winget is not available on this system.');
-    console.log('  Download LM Studio manually: https://lmstudio.ai/');
-    return;
-  }
-
-  // Prompt notes the winget ID should be verified; try the most common known IDs.
-  const candidateIds = ['ElementLabs.LMStudio', 'LMStudio.LMStudio', 'lmstudio'];
-  let installed = false;
-  for (const id of candidateIds) {
+  // Try a few candidate winget IDs (the canonical one varies by region/source).
+  const candidates = ['ElementLabs.LMStudio', 'LMStudio.LMStudio', 'lmstudio'];
+  for (const id of candidates) {
     try {
+      process.stdout.write(`  ${chalk.dim(`→ Installing LM Studio (${id})…`)}\r`);
       await execa(
         'winget',
-        [
-          'install',
-          '--id',
-          id,
-          '--silent',
-          '--accept-package-agreements',
-          '--accept-source-agreements',
-        ],
-        { stdio: 'inherit' },
+        ['install', '--id', id, '--silent', '--accept-package-agreements', '--accept-source-agreements'],
+        { stdio: 'ignore' },
       );
-      installed = true;
-      break;
+      console.log(`  ${chalk.green('✓')} LM Studio installed                           `);
+      return;
     } catch {
-      // try next candidate
+      // try next
     }
   }
-
-  if (!installed) {
-    printWarn('Could not install LM Studio via winget.');
-    console.log('  Download LM Studio manually: https://lmstudio.ai/');
-    return;
-  }
-
-  printSuccess('LM Studio installed.');
-  console.log('');
-  console.log('Next: download a model inside LM Studio.');
-
-  // Prefer an already-loaded LM Studio model if compatible; otherwise use the
-  // top GOOD coding-profile entry from llm-env-check's catalog. This was the
-  // gap before: we used to hardcode Qwen3-Coder-30B which is too big for most
-  // machines. Catalog data is hardware-aware.
-  const catalogPick = pickBestCatalogModel(
-    scan.hardware.catalogRecommendations,
-    scan.hardware.catalogProfile,
-  );
-  const recommendedSearch =
-    advice.preferredModel ?? catalogPick?.name ?? 'Qwen2.5-Coder 7B';
-  const recommendedQuant = catalogPick?.quantization ?? 'Q4_K_M';
-
-  if (advice.preferredModel) {
-    console.log(`Recommended (already in LM Studio): ${advice.preferredModel}`);
-  } else if (catalogPick) {
-    console.log(
-      `Recommended for your hardware (from llm-env-check): ${catalogPick.name} — ${catalogPick.useCase}`,
-    );
-    console.log(
-      `  Est. ${catalogPick.estimatedMemoryGb} GB ${catalogPick.quantization}  |  Rating: ${catalogPick.rating}`,
-    );
-  }
-  console.log('');
-  console.log('Steps:');
-  console.log('  1. Open LM Studio');
-  console.log('  2. Go to the Search tab');
-  console.log(`  3. Search: ${recommendedSearch}`);
-  console.log(`  4. Download the ${recommendedQuant} variant (or closest available)`);
-  console.log('  5. Go to Local Server → Load model → Start server');
-  console.log('');
-
-  await waitForUserReady();
+  printWarn('Could not install LM Studio via winget. Download: https://lmstudio.ai/');
 }
 
-async function installOpencodeIfMissing(scan: ScanResult): Promise<void> {
-  if (scan.opencode.status === 'ok') return;
-
-  printSection('opencode');
-  console.log('opencode is not installed.');
-  console.log('');
-
+async function installOpencode(): Promise<void> {
   if (!(await ask('Install opencode globally via npm?'))) {
-    printWarn('Skipping opencode install. local-ai cannot continue without it.');
+    printWarn('Skipping opencode. local-ai cannot continue without it.');
     return;
   }
-
   try {
-    await execa('npm', ['install', '-g', 'opencode'], { stdio: 'inherit' });
-    printSuccess('opencode installed.');
-    console.log(
-      '  Note: you may need to restart your terminal for the `opencode` command to be on PATH.',
-    );
+    process.stdout.write(`  ${chalk.dim('→ Installing opencode (npm install -g opencode)…')}\r`);
+    await execa('npm', ['install', '-g', 'opencode'], { stdio: 'ignore' });
+    console.log(`  ${chalk.green('✓')} opencode installed                                       `);
   } catch {
-    printError('opencode install failed. Try manually: npm install -g opencode');
+    console.log(`  ${chalk.red('✗')} opencode install failed. Try: npm install -g opencode`);
   }
 }
 
-export async function installMissingTools(
-  scan: ScanResult,
-  advice: Advice,
-): Promise<void> {
-  await installGitIfMissing(scan);
-  await installLMStudioIfMissing(scan, advice);
-  await installOpencodeIfMissing(scan);
+// ===========================================================================
+// Wait helpers
+// ===========================================================================
+
+async function waitForEnter(message: string): Promise<void> {
+  try {
+    await input({ message, default: '' });
+  } catch {
+    console.log('\nCancelled.');
+    // Defer to let inquirer finish closing its readline interface (Windows libuv).
+    setImmediate(() => process.exit(0));
+    await new Promise<never>(() => undefined);
+  }
 }
 
 // ===========================================================================
-// Re-verification — LM Studio may have just had a model loaded
-// ===========================================================================
-
-async function reVerifyLMStudio(scan: ScanResult): Promise<ScanResult> {
-  const lm = await checkLMStudio(scan.hardware);
-  return {
-    ...scan,
-    lmstudio: lm.server,
-    models: lm.models,
-  };
-}
-
-// ===========================================================================
-// Shared steps: opencode config write + state save
-// ===========================================================================
-
-async function ensureOpencodeConfig(scan: ScanResult, model: string): Promise<void> {
-  if (scan.opencodeConfig.status === 'ok') {
-    printSuccess('opencode config already in place.');
-    return;
-  }
-
-  if (!(await ask('Create opencode config pointing to your local model?'))) {
-    printWarn('Skipping opencode config. You will need to configure it manually.');
-    return;
-  }
-
-  const result = await writeOpencodeConfig(model);
-  if (result.written) {
-    printSuccess(`opencode config written to ${OPENCODE_CONFIG_FILE}`);
-    if (result.backedUp && result.backupPath) {
-      printInfo(`Previous config backed up to: ${result.backupPath}`);
-    }
-  }
-}
-
-async function saveStateIfApproved(
-  target: WorkflowTarget,
-  model: string,
-  profile: string,
-): Promise<void> {
-  if (!(await ask('Save setup state for future runs?'))) {
-    printWarn('Skipping state save. Setup will be re-checked next time.');
-    return;
-  }
-  await writeState({
-    version: VERSION,
-    profile,
-    workflow: target,
-    setupComplete: true,
-    provider: 'lmstudio',
-    serverUrl: LMSTUDIO_BASE_URL,
-    model,
-    configPath: OPENCODE_CONFIG_FILE,
-    lastVerified: new Date().toISOString(),
-  });
-  printSuccess('Setup state saved.');
-}
-
-// ===========================================================================
-// Terminal flow — Task 7.3
-// ===========================================================================
-
-async function runTerminalSetup(
-  scan: ScanResult,
-  model: string,
-  profile: string,
-): Promise<boolean> {
-  printSection('Terminal workflow');
-
-  if (!(await checkOpencodeInstalled())) {
-    printError('opencode is not installed. Cannot proceed with terminal workflow.');
-    return false;
-  }
-  if (scan.lmstudio.status !== 'ok') {
-    printError('LM Studio is not reachable. Start the LM Studio server and try again.');
-    return false;
-  }
-  if (scan.models.status !== 'ok') {
-    printError('No models loaded in LM Studio. Load a model and try again.');
-    return false;
-  }
-
-  await ensureOpencodeConfig(scan, model);
-  await saveStateIfApproved('terminal', model, profile);
-
-  console.log('');
-  console.log('Terminal workflow ready.');
-  console.log('');
-  console.log('Next command:');
-  console.log('  opencode');
-  console.log('');
-  console.log('Developed by Brijesh B');
-  console.log('');
-
-  if (await ask('Open opencode in a new terminal window now?')) {
-    await launchOpencode(process.cwd());
-  }
-  return true;
-}
-
-// ===========================================================================
-// VS Code flow — Task 7.4
-// ===========================================================================
-
-async function runVSCodeSetup(
-  scan: ScanResult,
-  model: string,
-  profile: string,
-): Promise<boolean> {
-  printSection('VS Code workflow');
-
-  if (scan.vscode.status === 'missing') {
-    printWarn("VS Code 'code' command not found.");
-    console.log(
-      "  Open VS Code → Command Palette → Shell Command: Install 'code' command in PATH",
-    );
-    console.log("  Continuing — opencode can still be used inside VS Code's terminal.");
-  }
-  if (!(await checkOpencodeInstalled())) {
-    printError('opencode is not installed. Cannot proceed.');
-    return false;
-  }
-  if (scan.lmstudio.status !== 'ok' || scan.models.status !== 'ok') {
-    printError('LM Studio + a loaded model are required. Start the server and load a model.');
-    return false;
-  }
-
-  await ensureOpencodeConfig(scan, model);
-  await saveStateIfApproved('vscode', model, profile);
-
-  printVSCodeCard(model);
-
-  if (scan.vscode.status === 'ok' && (await ask('Open VS Code in this folder now?'))) {
-    await launchVSCode(process.cwd());
-  }
-  return true;
-}
-
-// ===========================================================================
-// Both flow — Task 7.5 (terminal + VS Code; shared config write)
-// ===========================================================================
-
-async function runBothSetup(
-  scan: ScanResult,
-  model: string,
-  profile: string,
-): Promise<boolean> {
-  printSection('Terminal + VS Code workflow');
-
-  if (!(await checkOpencodeInstalled())) {
-    printError('opencode is not installed. Cannot proceed.');
-    return false;
-  }
-  if (scan.lmstudio.status !== 'ok' || scan.models.status !== 'ok') {
-    printError('LM Studio + a loaded model are required. Start the server and load a model.');
-    return false;
-  }
-
-  // Config + state happen once for the combined flow.
-  await ensureOpencodeConfig(scan, model);
-  await saveStateIfApproved('both', model, profile);
-
-  // Terminal launch step
-  if (await ask('Open opencode in a new terminal window now?')) {
-    await launchOpencode(process.cwd());
-  }
-
-  // VS Code next steps
-  printVSCodeCard(model);
-  if (scan.vscode.status === 'ok' && (await ask('Open VS Code in this folder now?'))) {
-    await launchVSCode(process.cwd());
-  }
-  return true;
-}
-
-// ===========================================================================
-// runSetupWorkflow — Section 7 main entry
+// Main entry — runSetupWorkflow
 // ===========================================================================
 
 export async function runSetupWorkflow(
   target: WorkflowTarget,
-  scan: ScanResult,
-  advice: Advice,
+  hardware: HardwareCapabilities,
 ): Promise<void> {
-  // Phase 1 — install any missing base tools (Git, LM Studio, opencode).
-  await installMissingTools(scan, advice);
+  // Phase 1 — quick presence check of every tool we care about.
+  const [gitOk, opencodeOk, vscodeOk, wingetOk] = await Promise.all([
+    commandExists('git'),
+    checkOpencodeInstalled(),
+    checkVSCodeInstalled(),
+    commandExists('winget'),
+  ]);
+  const lmCheck1 = await checkLMStudio(hardware);
+  const lmReachable = lmCheck1.server.status === 'ok';
 
-  // Phase 2 — re-scan LM Studio: the user may have just loaded a model.
-  const refreshedScan = await reVerifyLMStudio(scan);
+  // Don't require VS Code for terminal-only flows.
+  const vscodeRequired = target !== 'terminal';
 
-  // Phase 3 — resolve a model to wire opencode to.
-  let model = refreshedScan.models.selectedModel ?? advice.preferredModel;
-  if (!model) {
-    const available =
-      refreshedScan.models.compatibleModelIds ?? refreshedScan.models.modelIds ?? [];
-    if (available.length === 0) {
-      printWarn(
-        'No models are available in LM Studio. Load a model and run: local-ai setup',
-      );
-      return;
-    }
-    model = await choose('Which model should opencode use?', available);
+  await printToolStatusLine({
+    Git: gitOk,
+    opencode: opencodeOk,
+    ...(vscodeRequired ? { 'VS Code': vscodeOk } : {}),
+    'LM Studio': lmReachable,
+  });
+
+  // Phase 2 — install missing base tools, one at a time.
+  if (!gitOk) await installGit(wingetOk);
+  if (!opencodeOk) await installOpencode();
+  if (!lmReachable) {
+    await installLMStudio(wingetOk);
+    console.log(`  ${chalk.dim('After install, open LM Studio at least once so it can initialize.')}`);
+    await waitForEnter('Press Enter when LM Studio is open (or type S to skip):');
   }
 
-  // Phase 4 — dispatch by workflow target.
+  // Phase 3 — re-scan LM Studio (user may have just installed / opened it).
+  console.log('');
+  const lmCheck2 = await checkLMStudio(hardware);
+  if (lmCheck2.server.status !== 'ok') {
+    printError('LM Studio server is still not reachable.');
+    printInfo('Open LM Studio → Local Server → Start, then run: local-ai');
+    process.exit(1);
+  }
+
+  // Phase 4 — pick or reuse a model.
+  const loadedCompatible = lmCheck2.models.compatibleModelIds ?? [];
+  let modelId: string;
+  let modelDisplay: string;
+
+  if (loadedCompatible.length > 0) {
+    // A compatible chat/coding model is already loaded — use it, skip the picker.
+    const preferred =
+      lmCheck2.models.selectedModel ?? loadedCompatible[0] ?? '';
+    modelId = preferred;
+    modelDisplay = preferred;
+    printSuccess(`Using loaded model: ${chalk.green(modelId)}`);
+  } else {
+    // Show the picker.
+    console.log('');
+    const pick = await pickModelToInstall(
+      hardware.catalogRecommendations,
+      hardware.catalogProfile,
+    );
+    if (!pick) {
+      printError('Your hardware cannot run any of the catalog models. Setup cannot continue.');
+      process.exit(1);
+    }
+    modelDisplay = `${pick.name} ${pick.quantization}`;
+    console.log('');
+    console.log(
+      `Open LM Studio → ${chalk.bold('Search')} tab → search ${chalk.cyan(`"${pick.searchHint}"`)}`,
+    );
+    console.log(
+      `Download the ${chalk.cyan(pick.quantization)} variant, then ${chalk.bold('Local Server → Load model → Start server')}.`,
+    );
+    await waitForEnter('Press Enter when the model is loaded (or type S to skip):');
+
+    // Re-scan to find the actual loaded model ID.
+    const lmCheck3 = await checkLMStudio(hardware);
+    const loadedNow =
+      lmCheck3.models.compatibleModelIds ?? lmCheck3.models.modelIds ?? [];
+    if (loadedNow.length === 0) {
+      printError('No model was loaded. Setup cannot continue.');
+      printInfo('Run: local-ai  once you have a model loaded in LM Studio.');
+      process.exit(1);
+    }
+    modelId =
+      lmCheck3.models.selectedModel ??
+      loadedNow.find((id) => id.toLowerCase().includes(pick.searchHint.toLowerCase().split(' ')[0] ?? '')) ??
+      loadedNow[0] ??
+      '';
+  }
+
+  if (!modelId) {
+    printError('No usable model found.');
+    process.exit(1);
+  }
+
+  // Phase 5 — write opencode config.
+  process.stdout.write(`  ${chalk.dim('→ Writing opencode config…')}\r`);
+  const cfgResult = await writeOpencodeConfig(modelId);
+  if (!cfgResult.written) {
+    console.log(`  ${chalk.red('✗')} opencode config not written. Setup aborted.`);
+    process.exit(1);
+  }
+  console.log(`  ${chalk.green('✓')} opencode config written                  `);
+  if (cfgResult.backedUp && cfgResult.backupPath) {
+    console.log(`    ${chalk.dim(`(previous config backed up to: ${cfgResult.backupPath})`)}`);
+  }
+
+  // Phase 6 — save state (silent default, per UX brief).
+  await writeState({
+    version: VERSION,
+    profile: PROFILE_DEFAULT,
+    workflow: target,
+    setupComplete: true,
+    provider: 'lmstudio',
+    serverUrl: LMSTUDIO_BASE_URL,
+    model: modelId,
+    configPath: OPENCODE_CONFIG_FILE,
+    lastVerified: new Date().toISOString(),
+  });
+  console.log(`  ${chalk.green('✓')} Setup saved`);
+
+  // Phase 7 — final summary + launch.
+  console.log('');
+  printSuccess(`You're set up. Model: ${chalk.green(modelDisplay)}`);
+  console.log('');
+
   switch (target) {
     case 'terminal':
-      await runTerminalSetup(refreshedScan, model, PROFILE_DEFAULT);
+      console.log('Opening a new terminal window with opencode…');
+      await launchOpencode(process.cwd());
+      console.log(chalk.dim(`(If nothing opens, run \`opencode\` manually.)`));
       break;
+
     case 'vscode':
-      await runVSCodeSetup(refreshedScan, model, PROFILE_DEFAULT);
+      printVSCodeCard(modelId);
+      if (vscodeOk) {
+        await launchVSCode(process.cwd());
+      } else {
+        printWarn("VS Code's `code` command isn't on PATH — open VS Code yourself.");
+      }
       break;
+
     case 'both':
-      await runBothSetup(refreshedScan, model, PROFILE_DEFAULT);
+      console.log('Opening a new terminal window with opencode…');
+      await launchOpencode(process.cwd());
+      printVSCodeCard(modelId);
+      if (vscodeOk) {
+        await launchVSCode(process.cwd());
+      } else {
+        printWarn("VS Code's `code` command isn't on PATH — open VS Code yourself.");
+      }
       break;
   }
 }

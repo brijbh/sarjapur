@@ -79,6 +79,12 @@ function parseTierFromId(modelId: string): ModelTier | null {
   return null;
 }
 
+// Embedding models are not usable for chat/coding — exclude them from
+// "compatible" results so the UX never recommends one as a chat target.
+function isEmbeddingModel(modelId: string): boolean {
+  return /embed/i.test(modelId);
+}
+
 export function filterCompatibleModels(
   modelIds: string[],
   hardware: HardwareCapabilities,
@@ -86,13 +92,14 @@ export function filterCompatibleModels(
   const supported = new Set<ModelTier>(hardware.runnableModelTiers);
 
   const compatible = modelIds.filter((id) => {
+    if (isEmbeddingModel(id)) return false;
     const tier = parseTierFromId(id);
     if (tier === null) return true; // unknown size → include (can't determine incompatibility)
     return supported.has(tier);
   });
 
-  // If nothing survived filtering, return all with a warning (caller handles it)
-  return compatible.length > 0 ? compatible : modelIds;
+  // If nothing survived filtering, return everything that isn't an embedding.
+  return compatible.length > 0 ? compatible : modelIds.filter((id) => !isEmbeddingModel(id));
 }
 
 // ---------------------------------------------------------------------------

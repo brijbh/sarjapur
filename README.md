@@ -5,11 +5,13 @@
 It scans your hardware, picks a model your machine can actually run, installs the supporting tools (LM Studio + opencode), writes the opencode config that points at your local server, and launches you into a working chat/coding session.
 
 ```
-npx local-ai          # diagnostic scan — read-only, no installs
-npx local-ai setup    # guided setup — installs + config (asks before any write)
+npx local-ai          # the command that gets it done — guided setup
+npx local-ai doctor   # full diagnostic for power users
 ```
 
-Run `npx local-ai` first to see what your hardware can run, what's already installed, and which models `llm-env-check` recommends for your machine. When you're ready to actually wire things up, run `npx local-ai setup`. After the first successful setup, both commands verify the saved setup live — they never re-install if nothing has changed.
+`npx local-ai` is action-first: one line confirming your hardware, one question (Terminal / VS Code / Both), one compact picker for the model to install, and you're done. If everything is already set up, it prints a 2-line "ready" message and exits.
+
+`npx local-ai doctor` is the diagnostic — hardware tiers, every tool's version, the full 10-row `llm-env-check` catalog with ratings. Useful when you want to understand what's available, not when you want to get going.
 
 ---
 
@@ -67,9 +69,9 @@ winget install OpenJS.NodeJS.LTS
 
 | Command | What it does |
 |---|---|
-| `npx local-ai` | Same as `doctor` — read-only diagnostic scan. Prints hardware, system tools, LM Studio status, currently loaded models, and `llm-env-check`'s catalog recommendations for your machine. No installs, no writes. Exits 0 if everything is `ok`, 1 otherwise. |
-| `local-ai doctor` | Explicit form of the bare command above. |
-| `local-ai setup` | Guided setup. Scans hardware, walks you through any missing tools (asks Yes/No before each install), writes opencode config (with a backup of any existing one), saves state, optionally launches opencode or VS Code. |
+| `npx local-ai` | Same as `setup`. Action-first: confirms hardware, asks where you want to use it (Terminal / VS Code / Both), picks or auto-detects a model, installs anything missing (Yes/No per tool), writes opencode config (with backup), launches you in. If already set up, prints "ready" in 2 lines and exits. |
+| `local-ai setup` | Explicit form of the bare command above. |
+| `local-ai doctor` | Power-user diagnostic. Full hardware + tool + LM Studio status table, plus the 10-row `llm-env-check` catalog with ratings. Read-only, no installs. |
 | `local-ai status` | Verifies a previously saved setup against the live system. Updates `lastVerified` if all checks pass. |
 | `local-ai repair` | Live-verifies saved state. Offers to update the saved model if it's no longer loaded, recreate a missing/invalid opencode config, etc. |
 | `local-ai reset` | Deletes the saved state file. Does NOT uninstall tools or remove opencode config. |

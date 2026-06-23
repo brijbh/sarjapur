@@ -10,7 +10,11 @@ export async function ask(message: string): Promise<boolean> {
   } catch {
     // Ctrl+C or stream close
     console.log('\nCancelled.');
-    process.exit(0);
+    // Defer exit to let inquirer finish closing its readline interface.
+    // On Windows + Node 24, calling process.exit synchronously here triggers
+    // a libuv UV_HANDLE_CLOSING assertion.
+    setImmediate(() => process.exit(0));
+    return new Promise(() => undefined) as never; // never resolves; we exit first.
   }
 }
 
@@ -26,7 +30,11 @@ export async function strongConfirm(message: string, requiredWord: string): Prom
     return answer.trim() === requiredWord;
   } catch {
     console.log('\nCancelled.');
-    process.exit(0);
+    // Defer exit to let inquirer finish closing its readline interface.
+    // On Windows + Node 24, calling process.exit synchronously here triggers
+    // a libuv UV_HANDLE_CLOSING assertion.
+    setImmediate(() => process.exit(0));
+    return new Promise(() => undefined) as never; // never resolves; we exit first.
   }
 }
 
@@ -43,6 +51,10 @@ export async function choose<T extends string>(message: string, choices: T[]): P
     return result;
   } catch {
     console.log('\nCancelled.');
-    process.exit(0);
+    // Defer exit to let inquirer finish closing its readline interface.
+    // On Windows + Node 24, calling process.exit synchronously here triggers
+    // a libuv UV_HANDLE_CLOSING assertion.
+    setImmediate(() => process.exit(0));
+    return new Promise(() => undefined) as never; // never resolves; we exit first.
   }
 }
