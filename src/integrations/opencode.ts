@@ -1,4 +1,7 @@
 import { spawn } from 'node:child_process';
+import { select } from '@inquirer/prompts';
+import chalk from 'chalk';
+
 import { OPENCODE_CONFIG_FILE } from '../core/paths.js';
 import {
   fileExists,
@@ -6,7 +9,6 @@ import {
   writeJsonFile,
   backupFile,
 } from '../utils/files.js';
-import { ask } from '../core/permissions.js';
 import { runCommand } from '../utils/command.js';
 
 // ---------------------------------------------------------------------------
@@ -118,28 +120,100 @@ export interface WriteConfigResult {
   written: boolean;
 }
 
+type ConfigAction = 'update-with-backup' | 'update-only' | 'backup-only' | 'skip';
+
+async function chooseConfigAction(modelId: string): Promise<ConfigAction> {
+  console.log('');
+  console.log(`opencode config already exists at: ${chalk.gray(OPENCODE_CONFIG_FILE)}`);
+  console.log(
+    `Update would add this entry under ${chalk.cyan('provider.lmstudio.models')}:`,
+  );
+  console.log(`  ${chalk.green(`"${modelId}"`)}: { name: "..." }`);
+  console.log(
+    chalk.dim('  Existing settings, other providers, and other models are preserved.'),
+  );
+  console.log('');
+
+  try {
+    return await select<ConfigAction>({
+      message: 'What would you like to do?',
+      choices: [
+        {
+          name: `${chalk.bold('Back up and update')} ${chalk.dim('(recommended — safe default)')}`,
+          value: 'update-with-backup',
+        },
+        {
+          name: `${chalk.bold('Update only')}        ${chalk.yellow('— no backup')}`,
+          value: 'update-only',
+        },
+        {
+          name: `${chalk.bold('Back up only')}       ${chalk.dim("— don't change the config")}`,
+          value: 'backup-only',
+        },
+        {
+          name: `${chalk.bold('Skip')}               ${chalk.dim("— show what would be written, don't touch the file")}`,
+          value: 'skip',
+        },
+      ],
+      default: 'update-with-backup',
+    });
+  } catch {
+    console.log('\nCancelled.');
+    setImmediate(() => process.exit(0));
+    return await new Promise<never>(() => undefined);
+  }
+}
+
 export async function writeOpencodeConfig(modelId: string): Promise<WriteConfigResult> {
   const generated = generateOpencodeConfig(modelId);
   const exists = await fileExists(OPENCODE_CONFIG_FILE);
 
-  if (exists) {
-    const proceed = await ask('opencode config already exists. Back up and update it?');
-    if (!proceed) {
-      console.log('Would have written:');
-      console.log(JSON.stringify(generated, null, 2));
-      return { backedUp: false, backupPath: null, written: false };
-    }
-    const backupPath = await backupFile(OPENCODE_CONFIG_FILE);
-    const existing =
-      (await readJsonFile<Record<string, unknown>>(OPENCODE_CONFIG_FILE)) ?? {};
-    const merged = mergeOpencodeConfig(existing, generated);
-    await writeJsonFile(OPENCODE_CONFIG_FILE, merged);
-    return { backedUp: true, backupPath, written: true };
+  // No existing config — write fresh, no prompt needed.
+  if (!exists) {
+    await writeJsonFile(OPENCODE_CONFIG_FILE, generated);
+    return { backedUp: false, backupPath: null, written: true };
   }
 
-  // No existing config — write fresh.
-  await writeJsonFile(OPENCODE_CONFIG_FILE, generated);
-  return { backedUp: false, backupPath: null, written: true };
+  const action = await chooseConfigAction(modelId);
+
+  switch (action) {
+    case 'update-with-backup': {
+      const backupPath = await backupFile(OPENCODE_CONFIG_FILE);
+      const existing =
+        (await readJsonFile<Record<string, unknown>>(OPENCODE_CONFIG_FILE)) ?? {};
+      const merged = mergeOpencodeConfig(existing, generated);
+      await writeJsonFile(OPENCODE_CONFIG_FILE, merged);
+      return { backedUp: true, backupPath, written: true };
+    }
+
+    case 'update-only': {
+      const existing =
+        (await readJsonFile<Record<string, unknown>>(OPENCODE_CONFIG_FILE)) ?? {};
+      const merged = mergeOpencodeConfig(existing, generated);
+      await writeJsonFile(OPENCODE_CONFIG_FILE, merged);
+      return { backedUp: false, backupPath: null, written: true };
+    }
+
+    case 'backup-only': {
+      const backupPath = await backupFile(OPENCODE_CONFIG_FILE);
+      console.log(`${chalk.green('✓')} Backup written to: ${chalk.gray(backupPath)}`);
+      console.log(chalk.dim('  Config not updated.'));
+      return { backedUp: true, backupPath, written: false };
+    }
+
+    case 'skip':
+    default: {
+      // Show the merged preview so the user can see exactly what *would* land.
+      const existing =
+        (await readJsonFile<Record<string, unknown>>(OPENCODE_CONFIG_FILE)) ?? {};
+      const merged = mergeOpencodeConfig(existing, generated);
+      console.log('');
+      console.log('Would have written this merged config:');
+      console.log(chalk.gray(JSON.stringify(merged, null, 2)));
+      console.log(chalk.dim(`(The original file at ${OPENCODE_CONFIG_FILE} is unchanged.)`));
+      return { backedUp: false, backupPath: null, written: false };
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------

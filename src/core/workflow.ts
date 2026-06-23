@@ -232,13 +232,24 @@ export async function runSetupWorkflow(
   }
 
   // Phase 5 — write opencode config.
-  process.stdout.write(`  ${chalk.dim('→ Writing opencode config…')}\r`);
   const cfgResult = await writeOpencodeConfig(modelId);
   if (!cfgResult.written) {
-    console.log(`  ${chalk.red('✗')} opencode config not written. Setup aborted.`);
-    process.exit(1);
+    // User explicitly chose Backup-only or Skip — not a failure, just incomplete.
+    if (cfgResult.backedUp && cfgResult.backupPath) {
+      console.log(
+        `  ${chalk.yellow('⚠')} opencode config not updated (backup at: ${chalk.gray(cfgResult.backupPath)})`,
+      );
+    } else {
+      console.log(`  ${chalk.yellow('⚠')} opencode config not updated.`);
+    }
+    console.log(
+      chalk.dim(
+        '  Setup state will not be saved. Re-run `local-ai` once you are ready to update the config.',
+      ),
+    );
+    process.exit(0);
   }
-  console.log(`  ${chalk.green('✓')} opencode config written                  `);
+  console.log(`  ${chalk.green('✓')} opencode config written`);
   if (cfgResult.backedUp && cfgResult.backupPath) {
     console.log(`    ${chalk.dim(`(previous config backed up to: ${cfgResult.backupPath})`)}`);
   }
